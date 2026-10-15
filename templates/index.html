@@ -317,6 +317,11 @@ button{cursor:pointer;background:none;border:0}
 @keyframes tin{from{opacity:0;transform:translateX(24px) scale(.96)}}
 [dir=rtl] .toasts{align-items:flex-start}
 
+/* ===== level toast ===== */
+.toast.lvl{border-inline-start-color:var(--gold);background:linear-gradient(135deg,rgba(70,46,8,.97),rgba(18,14,8,.97));padding:14px 18px;gap:14px;box-shadow:0 14px 50px rgba(255,157,46,.4)}
+.lvl-ic{width:42px;height:48px;flex-shrink:0;clip-path:var(--hex);background:var(--gg);display:grid;place-items:center;color:#1a1100;font-weight:900;font-family:var(--disp);font-size:15px}
+.lvl-t b{display:block;font-family:var(--disp);font-size:13.5px;color:var(--gold);letter-spacing:.4px}
+.lvl-t span{color:var(--ink);font-size:12.5px;font-weight:600}
 /* ===== extra wow ===== */
 .globe{position:absolute;inset-inline-end:-24px;top:50%;transform:translateY(-50%);width:clamp(230px,38vw,350px);height:clamp(230px,38vw,350px);z-index:1;pointer-events:none;filter:drop-shadow(0 0 30px rgba(255,157,46,.35))}
 @media(max-width:600px){.globe{opacity:.4;inset-inline-end:-70px}}
@@ -439,6 +444,7 @@ button{cursor:pointer;background:none;border:0}
     <div class="page-head">
       <div><h1 class="page-title" data-i="Target Nodes">Target Nodes</h1><p class="page-sub" data-i="Kelola akun yang terhubung">Kelola akun yang terhubung</p></div>
       <div class="row">
+        <button class="btn on" id="btnAuto"><i class="fa-solid fa-bolt"></i><span>Auto-sync</span></button>
         <button class="btn" id="btnPauseAll"><i class="fa-solid fa-pause"></i><span>Pause All</span></button>
         <button class="btn primary" id="btnAdd"><i class="fa-solid fa-plus"></i><span data-i="Inject Node">Inject Node</span></button>
       </div>
@@ -686,7 +692,8 @@ const T = [
 ["{0} Online","{0} online","{0} متصل","{0} अनलाइन","{0} ऑनलाइन"],
 ["~{0} / jam","~{0} / hour","~{0} / ساعة","~{0} / घण्टा","~{0} / घंटा"],
 ["~{0} EXP/jam","~{0} EXP/hr","~{0} EXP/ساعة","~{0} EXP/घण्टा","~{0} EXP/घंटा"],
-["{0} Aktif","{0} Active","{0} نشط","{0} सक्रिय","{0} सक्रिय"]
+["{0} Aktif","{0} Active","{0} نشط","{0} सक्रिय","{0} सक्रिय"],
+["LVL {0} COMPLETED","LVL {0} COMPLETED","اكتمل المستوى {0}","LVL {0} पूरा भयो","LVL {0} पूरा हुआ"]
 ];
 T.forEach(r => LG.forEach((l,i) => D[l][r[0]] = r[i+1]));
 let lang = "id";
@@ -982,7 +989,7 @@ function renderAccounts(accounts, force){
 
   accounts.forEach((acc, i) => {
     const uid = String(acc.uid), cat = cats[i];
-    const level = Math.min(100, Math.max(1, parseInt(acc.level) || 1)), isMax = level >= 100;
+    const level = Math.min(100, Math.max(lvFromExp(Number(acc.current_exp || 0)), parseInt(acc.level) || 1)), isMax = level >= 100;
     const nextLvl = Math.min(100, level + 1);
     const baseExp = EXP_TABLE[level] ?? 0, targetExp = EXP_TABLE[nextLvl] ?? baseExp + 50000;
     const needed = Math.max(1, targetExp - baseExp), curExp = Number(acc.current_exp || 0);
@@ -1007,7 +1014,11 @@ function renderAccounts(accounts, force){
       card.classList.add("hit"); setTimeout(() => card.classList.remove("hit"), 900);
     }
     card._g = gNow;
-    if(card._lv != null && level > card._lv){ const r = card.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + 40, 34, 140); toast(t("{0} Level UP!", acc.nickname || uid).replace("{0} Level UP!", (acc.nickname || uid) + " → Lv " + level), "success"); }
+    if(card._lv != null && level > card._lv){
+      const from = card._lv, nick = acc.nickname || "", r = card.getBoundingClientRect(), vis = r.width > 0;
+      burst(vis ? r.left + r.width / 2 : innerWidth / 2, vis ? r.top + 40 : 120, 34, 140);
+      for(let L = from + 1; L <= level; L++) setTimeout(() => levelToast(nick, uid, L), (L - from - 1) * 700);
+    }
     card._lv = level;
     const tm = card.querySelector(".acc-time");
     if(tm){ tm.dataset.uptime = Math.floor(acc.uptime_seconds || 0); tm.dataset.paused = cat === "paused" ? "1" : "0"; tm.textContent = fmtDur(acc.uptime_seconds || 0); }
@@ -1378,6 +1389,39 @@ function scrambleTitle(){
   })();
 })();
 
+/* ================= Level helpers + auto-sync ================= */
+function lvFromExp(x){ if(!x) return 1; let l = 1; for(let i = 1; i <= 100; i++){ if(EXP_TABLE[i] <= x) l = i; else break; } return l; }
+function levelToast(nick, uid, lv){
+  const box = $("toastBox"), el = document.createElement("div");
+  el.className = "toast lvl";
+  el.innerHTML = `<div class="lvl-ic">${lv}</div><div class="lvl-t"><b>${esc(t("LVL {0} COMPLETED", lv))}</b><span>${esc(nick || uid)} · UID ${esc(uid)}</span></div>`;
+  while(box.children.length >= 6) box.firstChild.remove();
+  box.appendChild(el);
+  setTimeout(() => { el.classList.add("hide"); setTimeout(() => el.remove(), 350); }, 5500);
+}
+let autoSync = true; try{ autoSync = localStorage.getItem("autoSync") !== "0"; }catch(e){}
+function styleAuto(){ $("btnAuto").classList.toggle("on", autoSync); }
+$("btnAuto").addEventListener("click", () => {
+  autoSync = !autoSync; try{ localStorage.setItem("autoSync", autoSync ? "1" : "0"); }catch(e){}
+  styleAuto(); toast(autoSync ? "Auto-sync ON" : "Auto-sync OFF", autoSync ? "success" : "info");
+});
+let syncing = false;
+async function autoRefreshAll(){
+  if(!autoSync || syncing || document.hidden) return;
+  syncing = true;
+  try{
+    const list = state.accounts.filter(a => !(a.is_paused || a.status === "PAUSED"));
+    for(const a of list){
+      if(!autoSync) break;
+      try{ await post("/api/account/refresh", { uid: String(a.uid) }); }catch(e){}
+      await new Promise(r => setTimeout(r, 350));
+      fetchStats();
+    }
+  } finally { syncing = false; }
+}
+styleAuto();
+setInterval(autoRefreshAll, 12000);
+
 /* ================= Init ================= */
 const mt = "HAMMADPAPA ✦ ".repeat(14);
 $("marq1").textContent = mt; $("marq2").textContent = mt;
@@ -1387,7 +1431,7 @@ let saved = "id"; try{ saved = localStorage.getItem("lang") || "id"; }catch(e){}
 applyLang(saved);
 go(location.hash.slice(1));
 fetchStats();
-setInterval(() => { if(!document.hidden) fetchStats(); }, 5000);
+setInterval(() => { if(!document.hidden) fetchStats(); }, 2000);
 document.addEventListener("visibilitychange", () => { if(!document.hidden) fetchStats(); });
 </script>
 </body>
