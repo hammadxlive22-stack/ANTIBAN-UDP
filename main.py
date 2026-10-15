@@ -64,6 +64,9 @@ LONE_WOLF_MAP_ID = 11
 BR_MODE_ID = 1
 BR_MAP_ID = 1
 
+# 🕹️ MATCH MODE TOGGLE: "AUTO" (Level-based), "LW" (Lone Wolf), or "BR" (Battle Royale)
+PREFERRED_MATCH_MODE = "AUTO"
+
 ANTI_AFK_FIRE_CHANCE = 0.45
 ANTI_AFK_MIN_INTERVAL = 1.8
 ANTI_AFK_MAX_INTERVAL = 3.5
@@ -1891,28 +1894,24 @@ async def play_game(server_ip_port, thunder, sharma, udp_key, match_code,
 
         async def start_all_workers():
             nonlocal anti_afk_task, movement_task, jump_task, maintenance_task
-            # Movement
             if MOVEMENT_ENABLED and movement_task is None:
                 movement_task = asyncio.create_task(
                     movement_worker(sock, resolved_ip, port, udp_key_bytes, match_code,
                                     account_id, movement_stop, match_index)
                 )
                 print_success(f"[MOVE] Worker Started | Match #{match_index}")
-            # Jump
             if MOVEMENT_JUMP_CHANCE > 0 and jump_task is None:
                 jump_task = asyncio.create_task(
                     jump_replay_loop(sock, server_addr, udp_key_bytes, match_code,
                                      account_id, jump_stop, match_index)
                 )
                 print_success(f"[🦘] Jump Started | Match #{match_index}")
-            # Anti-AFK
             if anti_afk_task is None:
                 anti_afk_task = asyncio.create_task(
                     anti_afk_worker(sock, resolved_ip, port, udp_key_bytes, match_code,
                                     account_id, anti_afk_stop, match_index)
                 )
                 print_success(f"[AFK] Worker Started | Match #{match_index}")
-            # Maintenance
             if MAINTENANCE_ENABLED and maintenance_task is None:
                 maintenance_task = asyncio.create_task(
                     full_maintenance_loop(sock, server_addr, udp_key_bytes, match_code,
@@ -1942,7 +1941,6 @@ async def play_game(server_ip_port, thunder, sharma, udp_key, match_code,
                     ack_state = "thunder_sharma_sent"
                     print_success(f"[MATCH #{match_index}] Startup delivered")
 
-                    # 🎯 SEQUENCE: Airplane → Eject → Parachute → Touchdown
                     if AIRPLANE_ENABLED:
                         await asyncio.sleep(0.3)
                         await airplane_sequence(sock, server_addr, udp_key_bytes,
@@ -1960,7 +1958,6 @@ async def play_game(server_ip_port, thunder, sharma, udp_key, match_code,
                         await touchdown_sequence(sock, server_addr, udp_key_bytes,
                                                   match_code, account_id, match_index)
 
-                    # Start all workers
                     await start_all_workers()
                 except Exception as e:
                     print_error(f"[MATCH #{match_index}] send error: {e}")
@@ -2194,12 +2191,21 @@ async def functional_lone_wolf(addrs, starter_packet, account_region, client_ver
                     nonlocal search_attempts, last_start_time
                     search_attempts += 1
                     current_region = current_search_region
-                    if current_level >= LONE_WOLF_UNLOCK_LEVEL:
-                        mode_tag = "LONE WOLF"
-                        starter_func = start_game_lone_wolf
-                    else:
-                        mode_tag = "BATTLE ROYALE"
+                    
+                    # 🕹️ MATCH MODE DECIDER (Dashboard / Config Support)
+                    mode_setting = PREFERRED_MATCH_MODE.upper()
+                    if mode_setting == "BR":
                         starter_func = start_game_battle_royale
+                        print_info(f"[MODE] Forcing Battle Royale Mode")
+                    elif mode_setting == "LW":
+                        starter_func = start_game_lone_wolf
+                        print_info(f"[MODE] Forcing Lone Wolf Mode")
+                    else:  # AUTO mode based on level
+                        if current_level >= LONE_WOLF_UNLOCK_LEVEL:
+                            starter_func = start_game_lone_wolf
+                        else:
+                            starter_func = start_game_battle_royale
+
                     try:
                         await asyncio.sleep(bypass_jitter(0.4, 0.15))
                         await starter_func(current_region, client_version, writer, current_key, current_iv)
@@ -2274,12 +2280,18 @@ async def functional_lone_wolf(addrs, starter_packet, account_region, client_ver
                                 acc_tok = ""
                                 if current_account_data:
                                     acc_tok = current_account_data.get('access_token', '') or ""
-                                if current_level >= LONE_WOLF_UNLOCK_LEVEL:
-                                    selected_mode_id = LONE_WOLF_MODE_ID
-                                    selected_map_id = LONE_WOLF_MAP_ID
+                                
+                                mode_setting = PREFERRED_MATCH_MODE.upper()
+                                if mode_setting == "BR":
+                                    selected_mode_id, selected_map_id = BR_MODE_ID, BR_MAP_ID
+                                elif mode_setting == "LW":
+                                    selected_mode_id, selected_map_id = LONE_WOLF_MODE_ID, LONE_WOLF_MAP_ID
                                 else:
-                                    selected_mode_id = BR_MODE_ID
-                                    selected_map_id = BR_MAP_ID
+                                    if current_level >= LONE_WOLF_UNLOCK_LEVEL:
+                                        selected_mode_id, selected_map_id = LONE_WOLF_MODE_ID, LONE_WOLF_MAP_ID
+                                    else:
+                                        selected_mode_id, selected_map_id = BR_MODE_ID, BR_MAP_ID
+
                                 thunder, sharma = await build_match_startup_packets(
                                     token, udp_key, match_code, effective_acc_id, block_val or 0,
                                     server_ip=server_ip_port, region=account_region,
