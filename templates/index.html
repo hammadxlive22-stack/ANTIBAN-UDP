@@ -420,6 +420,20 @@ button{cursor:pointer;background:none;border:0}
         </div>
       </div>
     </div>
+    
+    <!-- MATCH MODE CONTROLLER -->
+    <div class="card brk" style="padding: 16px 22px; margin-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+      <div>
+        <div class="card-h" style="margin: 0 0 4px 0;"><i class="fa-solid fa-gamepad"></i><span>Match Mode Selector</span></div>
+        <small style="color: var(--dim);">Switch fast between Battle Royale (BR) & Lone Wolf (LW)</small>
+      </div>
+      <div class="seg" id="modeSwitcher">
+        <button type="button" onclick="changeMatchMode('AUTO')" id="btn-AUTO" class="active">AUTO</button>
+        <button type="button" onclick="changeMatchMode('BR')" id="btn-BR">BR (Battle Royale)</button>
+        <button type="button" onclick="changeMatchMode('LW')" id="btn-LW">LW (Lone Wolf)</button>
+      </div>
+    </div>
+
     <div class="tiles">
       <div class="card brk tile"><div><div class="t-top"><i class="fa-solid fa-diagram-project"></i><span data-i="Total node terhubung">Total node terhubung</span></div><div class="stat-val" id="stat-accounts">0</div></div><div class="stat-foot" id="stat-online">0 Online</div></div>
       <div class="card brk tile"><div><div class="t-top"><i class="fa-solid fa-bolt"></i><span data-i="Eksekusi dimulai">Eksekusi dimulai</span></div><div class="stat-val" id="stat-started">0</div></div><div class="stat-foot" id="stat-per-hour">~0 / jam</div></div>
@@ -586,9 +600,34 @@ const EXP_TABLE = {
 };
 
 const $ = id => document.getElementById(id);
-const state = { accounts:[], logs:[], online:true, loaded:false, serverUptime:null, upAt:Date.now(), hist:[] };
+const state = { accounts:[], logs:[], online:true, loaded:false, serverUptime:null, upAt:Date.now(), hist:[], currentMode: "AUTO" };
 let activeFilter = "all", activeLogFilter = "all", autoScroll = true, rendering = false;
 const clientStart = Date.now();
+
+/* ================= Fast Match Mode Switcher ================= */
+async function changeMatchMode(mode) {
+  try {
+    const res = await post("/api/set_mode", { match_mode: mode });
+    if (res.status === "success" || res.status === "ok") {
+      state.currentMode = res.match_mode || mode;
+      updateModeUI(state.currentMode);
+      toast(`Mode switched to: ${state.currentMode}`, "success");
+    } else {
+      toast("Failed to switch mode", "error");
+    }
+  } catch (e) {
+    toast("Backend connection error", "error");
+  }
+}
+
+function updateModeUI(activeMode) {
+  ['AUTO', 'BR', 'LW'].forEach(m => {
+    const btn = document.getElementById('btn-' + m);
+    if (btn) {
+      btn.classList.toggle('active', m === activeMode);
+    }
+  });
+}
 
 /* ================= i18n ================= */
 const LG = ["en","ar","ne","hi"], D = {en:{},ar:{},ne:{},hi:{}};
@@ -687,7 +726,7 @@ const T = [
 ["Belum ada node aktif.","No active nodes yet.","لا توجد عقد نشطة بعد.","अहिलेसम्म कुनै सक्रिय नोड छैन।","अभी कोई सक्रिय नोड नहीं है।"],
 ["Inject node pertama","Inject your first node","أضف أول عقدة","पहिलो नोड थप्नुहोस्","पहला नोड जोड़ें"],
 ["Log server dibersihkan","Server logs cleared","تم مسح سجلات الخادم","सर्भर लग मेटाइयो","सर्वर लॉग साफ़ किए गए"],
-["Gagal menghapus log di backend","Failed to clear logs on backend","فشل مسح السجلات على الخادم","ब्याकएन्डमा लग मेटाउन असफल","बैकएंड पर लॉग साफ़ करने में विफल"],
+["Gagal menghapus log di backend","Failed to clear logs on backend","فشل مسح السجلات على الخادم","ب्याकएन्डमा लग मेटाउन असफल","बैकएंड पर लॉग साफ़ करने में विफल"],
 ["{0} disalin: {1}","{0} copied: {1}","تم نسخ {0}: {1}","{0} कपी गरियो: {1}","{0} कॉपी किया गया: {1}"],
 ["{0} Online","{0} online","{0} متصل","{0} अनलाइन","{0} ऑनलाइन"],
 ["~{0} / jam","~{0} / hour","~{0} / ساعة","~{0} / घण्टा","~{0} / घंटा"],
@@ -1179,6 +1218,11 @@ function renderOverview(d){
   setText("p-matches", d.total_matches_started || 0);
   setText("p-exp", "+" + Number(d.total_gained_exp || 0).toLocaleString());
   setText("p-rate", Number(d.exp_per_hour || 0).toLocaleString());
+  
+  if (d.current_match_mode) {
+    state.currentMode = d.current_match_mode;
+    updateModeUI(state.currentMode);
+  }
 }
 function renderAll(force){
   if(!state.loaded) return;
